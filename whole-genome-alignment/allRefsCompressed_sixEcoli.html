@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="8000" height="1000" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+var canvas;
+var ctx;
+
+var width;
+var height;
+
+var mousePosition;
+
+var lengthOfCoordinateSystem;
+var blocks;
+var segments;
+var species;
+var blocksToDraw; 
+
+var highlightBlock = -1; 
+
+var highlightLines = []
+
+var blockHeight = 0; 
+var gapBetweenBlocks = 0;
+
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	width = canvas.width;
+	height = canvas.height;
+
+	initInteractivity(); 
+
+	loadJSON("six_ecoli.json", dataCallback);
+	// loadJSON("a_baumannii.json", dataCallback);
+
+}
+
+
+function initInteractivity(){
+	//Interactivity
+	// canvas.onmousedown = mouseDown;
+	// window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	// canvas.onmouseup = mouseUp;
+	//canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    canvas.addEventListener('mousemove', function(evt) {
+        mousePosition = getMousePos(canvas, evt);
+        //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+        //console.log(message);
+      }, false);
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+
+ function dataCallback(response) {
+// Parse JSON string into object
+	 all = JSON.parse(response);
+
+	 blocks = all["blocks"];
+	 segments = all["segments"];
+	 species = all["species"];
+	 unplaced = all["unplaced"];
+	 console.log(unplaced);
+	 blockHeight = (species.length-1)*10 + 10;
+	 // placeBlocks(); 
+	 // alignments = all["alignments"]; 
+
+	 // placeSegments(); 
+	 // placeAlignments();
+
+	 // positionInAlignedSegments = true; 
+	 // placeSegments();  
+	 lengthOfCoordinateSystem = all["lengthOfCoordinateSystem"];
+	 idOfConsensusLayout = all["idOfConsensusSpecies"];
+
+	 //sort blocks by starting position
+
+	 blocksToDraw = {}; 
+	 // blocksToDraw[ species[0]["id"] ] = placeBlocks(0, 110);
+	 // blocksToDraw[ species[1]["id"] ] = placeBlocks(1, 160);
+	 // blocksToDraw[ species[2]["id"] ] = placeBlocks(2, 210);
+	 runningY = 10; 
+	 blocksToDraw[ species[idOfConsensusLayout]["id"] ] = placeBlocks(idOfConsensusLayout, runningY); //we'll try it soon
+
+	 gapBetweenBlocks = blockHeight + 10;
+
+
+	 // blocksToDraw[ species[0]["id"] ] = placeBlocks(0, 100);
+	 // blocksToDraw[ species[1]["id"] ] = placeBlocks(1, 200);
+	 // blocksToDraw[ species[2]["id"] ] = placeBlocks(2, 300);
+	 // blocksToDraw[ species[3]["id"] ] = placeBlocks(3, 400);
+	 // blocksToDraw[ species[4]["id"] ] = placeBlocks(4, 500);
+	 // blocksToDraw[ species[5]["id"] ] = placeBlocks(5, 600);
+
+	 runningY += gapBetweenBlocks*2;
+	 blocksToDraw[ species[0]["id"] ] = placeBlocks(0, runningY);
+	 runningY += gapBetweenBlocks
+	 blocksToDraw[ species[1]["id"] ] = placeBlocks(1, runningY);
+ 	 runningY += gapBetweenBlocks
+	 blocksToDraw[ species[2]["id"] ] = placeBlocks(2, runningY);
+	 runningY += gapBetweenBlocks
+	 blocksToDraw[ species[3]["id"] ] = placeBlocks(3, runningY);
+ 	 runningY += gapBetweenBlocks
+	 blocksToDraw[ species[4]["id"] ] = placeBlocks(4, runningY);
+ 	 runningY += gapBetweenBlocks
+	 blocksToDraw[ species[5]["id"] ] = placeBlocks(5, runningY);
+
+	 //createScaffoldedConsensus( 0, 1 ); //not using 
+
+
+	 draw(); 
+
+ }
+
+// function createScaffoldedConsensus( speciesId1, speciesId2){
+// 	//assume species1 is the anchor
+
+// 	placed = new Array(blocks.length)
+// 	blockIdToOrder = new Array(blocks.length)
+// 	for( i = 0 ; i < blocks.length; i++){
+// 		placed[i] = false;
+// 		blockIdToOrder[i] = -1;
+// 	}
+
+
+
+// 	orderedBlocks1 = species[ speciesId1 ]["orderedBlocks"]
+// 	orderedBlocks2 = species[ speciesId2 ]["orderedBlocks"]
+
+// 	consensusOrder = []
+
+// 	//first position all the blocks in species 1
+// 	for( i = 0; i < orderedBlocks1.length; i++){
+// 		placed[ orderedBlocks1[i] ] = true;
+// 		blockIdToOrder[ orderedBlocks1[i] ] = i;
+// 		consensusOrder.push( orderedBlocks1[i] )
+// 	}
+
+// 	//find unpositioned blocks 
+// 	unpositioned = []
+// 	for( i = 0 ; i < blocks.length; i++){
+// 		if( !placed[i] )
+// 			unpositioned.push( blocks[i]["id"] )
+// 	}
+
+// 	//one pass, slow implementation 
+// 	// parent = orderedBlocks2[0] 
+// 	// child = 0;
+
+// 	for(i = 1; i < orderedBlocks2.length; i++){
+// 		thisBlock = orderedBlocks2[i];
+// 		//console.log(i + " " + thisBlock + " " + placed[thisBlock] );
+// 		if( !placed[thisBlock] ){
+// 			//consensusOrder.push( thisBlock )
+
+
+// 			parent = orderedBlocks2[i-1]; //get parent 
+// 			child = orderedBlocks2[i+1]; //get child 
+
+// 			//console.log("thisBlock " + thisBlock + " parent " + parent + " child " + child)
+// 			reorder = false; 
+// 			spliceIdx = consensusOrder.length
+// 			if( placed[parent] && placed[child] ) //if both are positioned 
+// 			{
+// 				//find parent
+
+// 				//find child
+
+
+// 				if( blockIdToOrder[parent] < blockIdToOrder[child] ) //if normal order
+// 				{
+// 					spliceIdx = blockIdToOrder[parent]+1
+// 					consensusOrder.splice( spliceIdx , 0, thisBlock  );
+// 					console.log("splice! " + thisBlock);
+// 					reorder = true
+// 				}
+// 			}
+
+// 			if( reorder ){
+// 				for( i = spliceIdx; i < consensusOrder.length; i++){
+// 					blockId = consensusOrder[i];
+// 					placed[i] = true;
+// 					blockIdToOrder[blockId] = i;
+// 				}
+// 			}
+
+// 		}
+// 		// if( !placed[ thisBlock ] ) //needs to be placed
+// 		// {
+// 		// 	parent = orderedBlocks2[i-1]; //get parent
+// 		// 	child = orderedBlocks2[i+1]; //get child 
+
+// 		// 	//console.log("thisBlock " + thisBlock + " parent " + parent + " child " + child)
+
+// 		// 	//simple insert
+// 		// 	if( placed[parent] && placed[child] ) //if both are positioned 
+// 		// 	{
+// 		// 		if( indices[parent] < indices[child] ) //if normal order
+// 		// 		{
+// 		// 			consensusOrder.splice( indices[parent]+1, 0, thisBlock  );
+// 		// 			console.log("splice! " + thisBlock);
+// 		// 		}
+// 		// 		// if( indices[parent] < indices[child] ) //if normal order
+// 		// 		// {
+// 		// 		// 	consensusOrder.splice( indices[parent]+1, 0, thisBlock  )
+// 		// 		// }
+// 		// 	}
+// 		// }
+
+// 		// //reindex everything every time
+
+// 		// //first position all the blocks in species 1
+// 		// for( i = 0; i < consensusOrder.length; i++){
+// 		// 	placed[ consensusOrder[i] ] = true;
+// 		// 	indices[ consensusOrder[i] ] = i;
+// 		// }
+
+// 	}
+	
+
+// 	console.log("Done");
+// 	//get maxNT
+// 	maxNT = 0
+// 	for( i = 0; i < consensusOrder.length; i++){
+// 		maxNT = maxNT + blocks[ consensusOrder[i] ].maxLength
+// 	}
+
+// 	newSpecies = { "contigList": [], "id": species.length, "maxNT": maxNT, "name": "consensus1", "orderedBlocks": consensusOrder };
+
+// 	species.push(newSpecies);
+
+// 	//console.log(newSpecies);
+//       // "contigList": [
+//       //   4, 
+//       //   0
+//       // ], 
+//       // "id": 0, 
+//       // "maxNT": 5620522, 
+//       // "name": 155864, 
+//       // "orderedBlocks": [
+
+// }
+
+
+
+function placeBlocks( index, y ) {
+	//map blocks into an appropriate x position
+	// console.log(" " + index+ " " + y);
+
+	if( index >= species.length )
+		return;
+
+
+	blocksArray = new Array()
+	
+	//init blocks
+	for(i = 0; i<blocks.length; i++){ 
+		blocksArray.push( {"x": 0, "y": 0, "w": 0, "h": 0 } );
+	}
+
+	ref = species[index]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = 0;
+	for(i = 0; i<orderedBlocks.length; i++){ 
+		oIdx = orderedBlocks[i] 
+		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		//w = map( blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, width );
+		w = 10;
+		blocksArray[oIdx].x = x;
+		blocksArray[oIdx].w = w;
+		blocksArray[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+		blocksArray[oIdx].y = y; 
+		runningX+= w;
+	}
+
+	return blocksArray; 
+}
+
+
+function draw(){
+    window.requestAnimationFrame(draw); 
+
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+
+    // ctx.globalAlpha = .5; 
+
+
+
+    somethingHighlighted = false; 
+
+    for(i = 0; i< species.length; i++){
+    	speciesId = species[i]["id"];
+
+
+    	b = blocksToDraw[ speciesId ]
+    	// console.log(b) 
+
+    	for(j = 0; j < b.length; j++ ){
+			drawInfo = false; 
+
+			ctx.fillStyle = "white";
+		    ctx.strokeStyle = "darkgray"
+		    ctx.lineWidth = 1;
+	    	if( mouseOver(b[j].x, b[j].y, b[j].w, b[j].h) ){
+	    		ctx.fillStyle = "coral"; 
+	    		drawInfo = true; 
+	    	}
+
+	    	if( j == highlightBlock ){
+	    		ctx.strokeStyle = "gold";
+				ctx.lineWidth=4;
+	    		ctx.fillStyle = "ivory"
+	    		ctx.fillRect( b[j].x,b[j].y, b[j].w, b[j].h );
+
+	    		highlightLines.push( {"x": b[j].x+b[j].w/2.0, "y": b[j].y+ b[j].h/2} );
+			}
+	    	
+	    	ctx.strokeRect(b[j].x,b[j].y, b[j].w, b[j].h);
+
+
+	    	if( drawInfo )
+	    	{
+	    		ctx.fillStyle = "white";
+	    		//ctx.fillRect(b[j].x-50, gapBetweenBlocks+20, b[j].w+100, b[j].h+50); 
+	    		ctx.font="20px Georgia";
+	    		ctx.fillStyle = "black";
+	    		textToDraw = "block: " + j + " maxLength: " + blocks[j].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+				ctx.fillText(textToDraw,b[j].x, gapBetweenBlocks+20);
+				//console.log( textToDraw);
+				drawInfo = false;
+
+				highlightBlock = j; 
+				somethingHighlighted = true; 
+	    	}
+
+	    	segs = blocks[j].segList; 
+	    	if( b[j].w > 0 ){
+	    		//runningY = blocks[i].y + 5; 
+		    	for(k= 0; k < segs.length; k++){
+		    		s = segs[k].id
+		    		// console.log(segments[s])
+		    		w =  10;//map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+		    		ctx.fillStyle = getColor( segments[s] )
+		    		ctx.fillRect(b[j].x, getSegmentY(segments[s])+b[j].y, w , 8); 
+		    	}
+		    }
+
+    	}
+    }
+
+    if( !somethingHighlighted ){
+    	highlightBlock = -1;
+    	highlightLines = [] 
+    }
+  //   else if (highlightLines.length>0){
+  //   	ctx.strokeStyle = "gold";
+		// ctx.lineWidth=4;
+  //   	ctx.beginPath();
+  //   	ctx.moveTo(highlightLines[0].x, highlightLines[0].y);
+
+  //   	for(i = 1; i< highlightLines.length; i++ ){
+		// 	ctx.lineTo(highlightLines[i].x, highlightLines[i].y);
+		// 	ctx.stroke();
+
+		// 	ctx.moveTo(highlightLines[i].x, highlightLines[i].y);
+
+  //   	}
+  //   	ctx.stroke();
+  //   }
+
+
+   //  for(i = 0; i<blocks.length; i++){
+   //  	drawInfo = false; 
+
+   //  	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+   //  		ctx.fillStyle = "coral"; 
+   //  		drawInfo = true; 
+   //  	}
+
+   //  	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+
+   //  	if( drawInfo )
+   //  	{
+   //  		ctx.fillStyle = "white";
+   //  		ctx.fillRect(blocks[i].x-50, 250, blocks[i].w+100, blocks[i].h+50); 
+   //  		ctx.font="20px Georgia";
+   //  		ctx.fillStyle = "black";
+   //  		textToDraw = "block: " + i +" startingPosition: " + blocks[i].startingPosition + " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			// ctx.fillText(textToDraw,blocks[i].x, 300);
+			// //console.log( textToDraw);
+			// drawInfo = false;
+   //  	}
+
+   //  	segs = blocks[i].segList; 
+   //  	if( blocks[i].w > 0 ){
+   //  		//runningY = blocks[i].y + 5; 
+	  //   	for(j= 0; j < segs.length; j++){
+	  //   		s = segs[j].id
+	  //   		// console.log(segments[s])
+	  //   		w =  map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	  //   		ctx.fillStyle = getColor( segments[s] )
+	  //   		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	  //   	}
+	  //   }
+
+   //  }
+
+}
+
+function getColor(d){
+	// if( colorScheme == 0 )
+	// {
+	// 	if( d.numberAligned == 1 )
+	// 		return "lightblue";
+	// 	if( d.numberAligned == 2 )
+	// 		return "steelblue";
+	// 	else
+	// 		return "darkblue";
+	// }
+	// if( colorScheme == 1 )
+	// {
+		return d3.interpolateSpectral( map( d.start, 0.0, species[d.speciesId].maxNT, 0.0, 1.0) ) ; 
+	// }
+	// if( colorScheme == 2 )
+	// 	if( d.reverseCompliment )
+	// 		return "orange";
+	// 	else
+	// 		return "steelblue";
+	// if( colorScheme == 3 )
+	// 	return "rgba(0,0,0,.3)";
+	// return "blue";
+}
+
+function getSegmentY(s){
+	if( s.speciesId == species[0].id )
+		return 5;
+	if( s.speciesId == species[1].id )
+		return 15;
+	if( s.speciesId == species[2].id )
+		return 25;
+	if( s.speciesId == species[3].id )
+		return 35;
+	if( s.speciesId == species[4].id )
+		return 45;
+	if( s.speciesId == species[5].id )
+		return 55;
+}
+
+
+function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function mouseOver(x1, y1, w, h){
+	if( !mousePosition )
+		return false; 
+	return mousePosition.x > x1 && mousePosition.y > y1 && mousePosition.x < x1+w && mousePosition.y < y1+h; 
+}
+
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+</script>
+
+</body>
+</html>

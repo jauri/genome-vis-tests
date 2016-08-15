@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="8000" height="1000" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+var canvas;
+var ctx;
+
+var width;
+var height;
+
+var mousePosition;
+
+var lengthOfCoordinateSystem;
+var blocks;
+var segments;
+var species;
+var blocksToDraw; 
+
+var highlightBlock = -1; 
+
+var highlightLines = []
+
+var blockHeight = 0; 
+var gapBetweenBlocks = 0;
+
+var updateBlockPositions = false; 
+var relayout = false; 
+var currentLayout = 0; 
+var fixedWidth = 0;
+
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	width = canvas.width;
+	height = canvas.height;
+
+	initInteractivity(); 
+
+	loadJSON("six_ecoli.json", dataCallback);
+	// loadJSON("a_baumannii.json", dataCallback);
+
+}
+
+
+function initInteractivity(){
+	//Interactivity
+	// canvas.onmousedown = mouseDown;
+	// window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	// canvas.onmouseup = mouseUp;
+	//canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    window.addEventListener('keyup',keyUp,true);
+
+    canvas.addEventListener('mousemove', function(evt) {
+        mousePosition = getMousePos(canvas, evt);
+        //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+        //console.log(message);
+      }, false);
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+
+ function dataCallback(response) {
+// Parse JSON string into object
+	 all = JSON.parse(response);
+
+	 blocks = all["blocks"];
+	 segments = all["segments"];
+	 species = all["species"];
+	 unplaced = all["unplaced"];
+	 console.log(unplaced);
+	 blockHeight = (species.length-1)*10 + 10;
+ 
+	 lengthOfCoordinateSystem = all["lengthOfCoordinateSystem"];
+	 idOfConsensusLayout = all["idOfConsensusSpecies"];
+	 currentLayout = idOfConsensusLayout; 
+
+	 initPositions(); 
+	 //layoutBlocks( ); 
+
+
+	 draw(); 
+
+ }
+
+ function initPositions()
+ {
+ 	if( currentLayout >= species.length )
+		return;
+
+ 	//init blocks
+	for(i = 0; i<blocks.length; i++){ 
+		blocks[i].x = 0;
+		blocks[i].y = 0;
+		blocks[i].w = 0;
+		blocks[i].h = 0;
+		blocks[i].targetX = 0;
+		blocks[i].targetY = 0;
+		blocks[i].targetW = 0;
+		blocks[i].targetH = 0;
+		blocks[i].targeting = false; 
+	}
+
+
+	ref = species[currentLayout]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = 0;
+	for(i = 0; i<orderedBlocks.length; i++){ 
+		oIdx = orderedBlocks[i] 
+		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		if( fixedWidth == 0 )
+			w = map( blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, width );
+		else
+			w = 10; //fixed width 
+
+		//blocks[oIdx].targetX = x;
+		// blocks[oIdx].targetW = w;
+		// blocks[oIdx].targetH = blockHeight; //blocks[i].numberAligned*10;	
+		// blocks[oIdx].targetY = 100; 
+
+		blocks[oIdx].x = x;
+		blocks[oIdx].w = w;
+		blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+		blocks[oIdx].y = 100; 
+		runningX+= w;
+	}
+ }
+
+
+
+ function layoutBlocks(){
+
+	if( currentLayout >= species.length )
+		return;
+
+	updateBlockPositions = true; 
+
+	 //will make blocks not in this list disappear... 
+	 // maybe later will try something else
+	for(i = 0; i<blocks.length; i++){ 
+		blocks[i].targetW = 0; 
+		blocks[i].targetH = 0;
+		blocks[i].targetX = 0;
+		blocks[i].targetY = 100;
+		blocks[i].targeting = true; //update to true
+	}
+
+
+	ref = species[currentLayout]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = 0;
+	for(i = 0; i<orderedBlocks.length; i++){ 
+		oIdx = orderedBlocks[i] 
+		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		
+		if( fixedWidth == 0 )
+			w = map( blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, width );
+		else
+			w = 10; //fixed width 
+
+		blocks[oIdx].targetX = x;
+		blocks[oIdx].targetW = w;
+		blocks[oIdx].targetH = blockHeight; //blocks[i].numberAligned*10;	
+		blocks[oIdx].targetY = 100; 
+
+		//blocks[oIdx].x = x;
+		// blocks[oIdx].w = w;
+		// blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+		// blocks[oIdx].y = 100; 
+		runningX+= w;
+	}
+ }
+
+
+// function placeBlocks( index, y ) {
+// 	//map blocks into an appropriate x position
+// 	// console.log(" " + index+ " " + y);
+
+// 	if( index >= species.length )
+// 		return;
+
+
+// 	blocksArray = new Array()
+	
+// 	//init blocks
+// 	for(i = 0; i<blocks.length; i++){ 
+// 		blocksArray.push( {"x": 0, "y": 0, "w": 0, "h": 0 } );
+// 	}
+
+// 	ref = species[index]; //for now
+// 	orderedBlocks = ref["orderedBlocks"];
+// 	runningX = 0;
+// 	for(i = 0; i<orderedBlocks.length; i++){ 
+// 		oIdx = orderedBlocks[i] 
+// 		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+// 		//w = map( blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, width );
+// 		w = 10;
+// 		blocksArray[oIdx].x = x;
+// 		blocksArray[oIdx].w = w;
+// 		blocksArray[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+// 		blocksArray[oIdx].y = y; 
+// 		runningX+= w;
+// 	}
+
+// 	return blocksArray; 
+// }
+
+
+function draw(){
+    window.requestAnimationFrame(draw); 
+
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+
+
+    if( relayout ){
+    	layoutBlocks();
+    	relayout = false;
+    }
+
+    // ctx.globalAlpha = .5; 
+
+    if( updateBlockPositions ){
+    	// console.log("update");
+    	update(); 
+    }
+
+    somethingHighlighted = false; 
+
+    for(i = 0; i< blocks.length; i++){
+		drawInfo = false; 
+
+		ctx.fillStyle = "white";
+	    ctx.strokeStyle = "darkgray"
+	    ctx.lineWidth = 1;
+    	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+    		ctx.fillStyle = "coral"; 
+    		drawInfo = true; 
+    	}
+
+    	if( i == highlightBlock ){
+    		ctx.strokeStyle = "gold";
+			ctx.lineWidth=4;
+    		ctx.fillStyle = "ivory"
+    		ctx.fillRect( blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h );
+
+    		highlightLines.push( {"x": blocks[i].x+blocks[i].w/2.0, "y": blocks[i].y+blocks[i].h/2} );
+		}
+    	
+    	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+
+    	if( drawInfo )
+    	{
+    		ctx.fillStyle = "white";
+    		//ctx.fillRect(b[j].x-50, gapBetweenBlocks+20, b[j].w+100, b[j].h+50); 
+    		ctx.font="20px Georgia";
+    		ctx.fillStyle = "black";
+    		textToDraw = "block: " + i ;//+ " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			ctx.fillText(textToDraw,blocks[i].x, gapBetweenBlocks+20);
+			//console.log( textToDraw);
+			drawInfo = false;
+
+			highlightBlock = i; 
+			somethingHighlighted = true; 
+    	}
+
+    	segs = blocks[i].segList; 
+    	if( blocks[i].w > 0 ){
+    		//runningY = blocks[i].y + 5; 
+	    	for(k= 0; k < segs.length; k++){
+	    		s = segs[k].id
+	    		// console.log(segments[s])
+	    		w =  10;//map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	    		if( fixedWidth == 0 )
+					w = map(segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	    		ctx.fillStyle = getColor( segments[s] )
+	    		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	    	}
+	    }
+
+    }
+
+    if( !somethingHighlighted ){
+    	highlightBlock = -1;
+    	highlightLines = [] 
+    }
+  //   else if (highlightLines.length>0){
+  //   	ctx.strokeStyle = "gold";
+		// ctx.lineWidth=4;
+  //   	ctx.beginPath();
+  //   	ctx.moveTo(highlightLines[0].x, highlightLines[0].y);
+
+  //   	for(i = 1; i< highlightLines.length; i++ ){
+		// 	ctx.lineTo(highlightLines[i].x, highlightLines[i].y);
+		// 	ctx.stroke();
+
+		// 	ctx.moveTo(highlightLines[i].x, highlightLines[i].y);
+
+  //   	}
+  //   	ctx.stroke();
+  //   }
+
+
+   //  for(i = 0; i<blocks.length; i++){
+   //  	drawInfo = false; 
+
+   //  	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+   //  		ctx.fillStyle = "coral"; 
+   //  		drawInfo = true; 
+   //  	}
+
+   //  	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+
+   //  	if( drawInfo )
+   //  	{
+   //  		ctx.fillStyle = "white";
+   //  		ctx.fillRect(blocks[i].x-50, 250, blocks[i].w+100, blocks[i].h+50); 
+   //  		ctx.font="20px Georgia";
+   //  		ctx.fillStyle = "black";
+   //  		textToDraw = "block: " + i +" startingPosition: " + blocks[i].startingPosition + " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			// ctx.fillText(textToDraw,blocks[i].x, 300);
+			// //console.log( textToDraw);
+			// drawInfo = false;
+   //  	}
+
+   //  	segs = blocks[i].segList; 
+   //  	if( blocks[i].w > 0 ){
+   //  		//runningY = blocks[i].y + 5; 
+	  //   	for(j= 0; j < segs.length; j++){
+	  //   		s = segs[j].id
+	  //   		// console.log(segments[s])
+	  //   		w =  map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	  //   		ctx.fillStyle = getColor( segments[s] )
+	  //   		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	  //   	}
+	  //   }
+
+   //  }
+
+}
+
+function update(){
+	allUpdated = false; 
+
+	doneCount = 0; 
+	for( i = 0; i < blocks.length; i++ ){
+		doneUpdatingBlock = updateBlock(blocks[i]); 
+		if( doneUpdatingBlock )
+			doneCount++; 
+	}
+
+	if( doneCount == blocks.length ){
+		updateBlockPositions = false; 
+		console.log("done!")
+	}
+	else
+		updateBlockPositions = true; 
+}
+
+function updateBlock(b){
+	count = 0; 
+	 
+	//update x
+	count += updateX(b);
+	count += updateY(b); 
+	count += updateW(b);
+	count += updateH(b); 
+
+	// if( Math.abs( b.x- b.targetX ) < 20.0 ){
+	// 	b.x = b.targetX;
+	// 	count++;
+	// }
+	// else{
+	// 	distance = b.x-b.targetX;  
+	// 	sign = distance && distance / Math.abs(distance);
+	// 	b.x -= sign * distance*.1;
+	// }
+
+	if( count == 4 )
+		return true; 
+	return false; 
+}
+
+function updateX(b){
+
+	if( Math.abs( b.x- b.targetX ) < 20.0 ){
+		b.x = b.targetX;
+		return 1; 
+	}
+	else{
+		distance = b.x-b.targetX;  
+		sign = distance / Math.abs(distance);
+		b.x -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function updateY(b){
+
+	if( Math.abs( b.y- b.targetY ) < 20.0 ){
+		b.y = b.targetY;
+		return 1; 
+	}
+	else{
+		distance = b.y-b.targetY;  
+		sign = distance / Math.abs(distance);
+		b.y -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+
+function updateW(b){
+
+	if( Math.abs( b.w- b.targetW ) < 20.0 ){
+		b.w = b.targetW;
+		return 1; 
+	}
+	else{
+		distance = b.w-b.targetW;  
+		sign = distance && distance / Math.abs(distance);
+		b.w -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function updateH(b){
+
+	if( Math.abs( b.h- b.targetH ) < 20.0 ){
+		b.h = b.targetH;
+		return 1; 
+	}
+	else{
+		distance = b.h-b.targetH;  
+		sign = distance && distance / Math.abs(distance);
+		b.h -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function getColor(d){
+	// if( colorScheme == 0 )
+	// {
+	// 	if( d.numberAligned == 1 )
+	// 		return "lightblue";
+	// 	if( d.numberAligned == 2 )
+	// 		return "steelblue";
+	// 	else
+	// 		return "darkblue";
+	// }
+	// if( colorScheme == 1 )
+	// {
+		return d3.interpolateSpectral( map( d.start, 0.0, species[d.speciesId].maxNT, 0.0, 1.0) ) ; 
+	// }
+	// if( colorScheme == 2 )
+	// 	if( d.reverseCompliment )
+	// 		return "orange";
+	// 	else
+	// 		return "steelblue";
+	// if( colorScheme == 3 )
+	// 	return "rgba(0,0,0,.3)";
+	// return "blue";
+}
+
+function getSegmentY(s){
+	if( s.speciesId == species[0].id )
+		return 5;
+	if( s.speciesId == species[1].id )
+		return 15;
+	if( s.speciesId == species[2].id )
+		return 25;
+	if( s.speciesId == species[3].id )
+		return 35;
+	if( s.speciesId == species[4].id )
+		return 45;
+	if( s.speciesId == species[5].id )
+		return 55;
+}
+
+
+function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function mouseOver(x1, y1, w, h){
+	if( !mousePosition )
+		return false; 
+	return mousePosition.x > x1 && mousePosition.y > y1 && mousePosition.x < x1+w && mousePosition.y < y1+h; 
+}
+
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+
+function keyUp(event){
+	console.log( event.keyCode );
+	if( event.keyCode == 76 ) //l
+	{
+		console.log( "new layout!")
+		currentLayout = currentLayout + 1; 
+		if( currentLayout >= species.length )
+			currentLayout = 0; 
+		relayout = true;
+	}
+	if( event.keyCode == 87 ) //w
+	{
+		console.log( "new layout with width");
+		fixedWidth += 1
+		if( fixedWidth == 2)
+			fixedWidth = 0;
+		relayout = true;
+	}
+	// if( event.keyCode == 17 )
+	// 	controlKeyDown = false; 
+	// if( event.keyCode == 16 )
+	// 	shiftKeyDown = false;
+}
+
+
+</script>
+
+</body>
+</html>

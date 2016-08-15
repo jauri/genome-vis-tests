@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="8000" height="600" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+
+var canvas;
+var ctx;
+
+var width;
+var height;
+
+var mousePosition;
+
+var lengthOfCoordinateSystem;
+var blocks;
+
+
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	width = canvas.width;
+	height = canvas.height;
+
+	initInteractivity(); 
+
+	loadJSON("ecoli_layout.json", dataCallback);
+
+}
+
+
+function initInteractivity(){
+	//Interactivity
+	// canvas.onmousedown = mouseDown;
+	// window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	// canvas.onmouseup = mouseUp;
+	//canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    canvas.addEventListener('mousemove', function(evt) {
+        mousePosition = getMousePos(canvas, evt);
+        //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+        //console.log(message);
+      }, false);
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+
+ function dataCallback(response) {
+// Parse JSON string into object
+	 all = JSON.parse(response);
+
+	 blocks = all["blocks"];
+	 placeBlocks(); 
+	 // alignments = all["alignments"]; 
+
+	 // placeSegments(); 
+	 // placeAlignments();
+
+	 // positionInAlignedSegments = true; 
+	 // placeSegments();  
+	 lengthOfCoordinateSystem = all["lengthOfCoordinateSystem"];
+
+	 //sort blocks by starting position
+
+	 placeBlocks();
+
+	 draw(); 
+
+ }
+
+
+function placeBlocks(){
+	//map blocks into an appropriate x position
+	for(i = 0; i<blocks.length; i++){
+		x = map( blocks[i].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		w = map( blocks[i].startingPosition + blocks[i].maxLength, 0, lengthOfCoordinateSystem, 0, width ) - x;
+		blocks[i].x = x;
+		blocks[i].w = w;
+		blocks[i].y = Math.random()*height;
+		blocks[i].h = blocks[i].numberAligned*5;
+	}
+
+
+}
+
+function draw() { 
+    window.requestAnimationFrame(draw); 
+
+	ctx.fillStyle = "white";
+    ctx.strokeStyle = "black"
+    for(i = 0; i<blocks.length; i++){
+    	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+    }
+}
+
+
+
+
+ function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+</script>
+
+</body>
+</html>

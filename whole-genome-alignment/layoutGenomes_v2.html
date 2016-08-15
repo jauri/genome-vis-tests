@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="32000" height="600" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+
+var canvas;
+var ctx;
+
+var width;
+var height;
+
+var mousePosition;
+
+var lengthOfCoordinateSystem;
+var blocks;
+var segments;
+var species;
+
+
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	width = canvas.width;
+	height = canvas.height;
+
+	initInteractivity(); 
+
+	loadJSON("ecoli_layout19.json", dataCallback);
+
+}
+
+
+function initInteractivity(){
+	//Interactivity
+	// canvas.onmousedown = mouseDown;
+	// window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	// canvas.onmouseup = mouseUp;
+	//canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    canvas.addEventListener('mousemove', function(evt) {
+        mousePosition = getMousePos(canvas, evt);
+        //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+        //console.log(message);
+      }, false);
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+
+ function dataCallback(response) {
+// Parse JSON string into object
+	 all = JSON.parse(response);
+
+	 blocks = all["blocks"];
+	 segments = all["segments"]
+	 species = all["species"]
+	 placeBlocks(); 
+	 // alignments = all["alignments"]; 
+
+	 // placeSegments(); 
+	 // placeAlignments();
+
+	 // positionInAlignedSegments = true; 
+	 // placeSegments();  
+	 lengthOfCoordinateSystem = all["lengthOfCoordinateSystem"];
+
+	 //sort blocks by starting position
+
+	 placeBlocks();
+
+	 draw(); 
+
+ }
+
+
+function placeBlocks(){
+	//map blocks into an appropriate x position
+	for(i = 0; i<blocks.length; i++){
+		x = map( blocks[i].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		w = map( blocks[i].startingPosition + blocks[i].maxLength, 0, lengthOfCoordinateSystem, 0, width ) - x;
+		blocks[i].x = x;
+		blocks[i].w = w;
+		blocks[i].h = 40;//blocks[i].numberAligned*10;	
+		// blocks[i].y = Math.random()*height/3;
+		if( blocks[i].numberAligned == 3 )
+			blocks[i].y = 0
+		else if( blocks[i].numberAligned == 2 ){
+			hasSpecies1 = false;
+			hasSpecies2 = false;
+			hasSpecies3 = false; 
+
+			sList = blocks[i]["segList"]
+
+			s1 = segments[ sList[0]["id"] ]["speciesId"];
+			s2 = segments[ sList[1]["id"] ]["speciesId"];
+			if( s1 == species[0].id || s2 == species[0].id )
+				hasSpecies1 = true;
+			if( s1 == species[1].id || s2 == species[1].id )
+				hasSpecies2 = true;
+			if( s1 == species[2].id || s2  == species[2].id )
+				hasSpecies3 = true;
+			
+
+			if( hasSpecies1 && hasSpecies2 ){
+				blocks[i].y = blocks[i].h;
+			} 
+			if( hasSpecies2 && hasSpecies3 ){
+				blocks[i].y = 2*blocks[i].h;
+			}
+			if( hasSpecies1 && hasSpecies3 ){
+				blocks[i].y = 3*blocks[i].h;
+			}
+		}
+		else if( blocks[i].numberAligned == 1) {
+			sList = blocks[i].segList;
+			s = segments[ sList[0]["id"] ].speciesId;
+			if( s == species[0].id ){
+				blocks[i].y = 4*blocks[i].h ;
+			}
+			else if( s == species[1].id ){
+				blocks[i].y = 5*blocks[i].h ;
+			}
+			else{
+				blocks[i].y = 6*blocks[i].h ;
+			}
+		}
+
+
+
+	}
+
+
+}
+
+function draw() { 
+    window.requestAnimationFrame(draw); 
+
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+
+    ctx.globalAlpha = .5; 
+
+	ctx.fillStyle = "white";
+    ctx.strokeStyle = "black"
+    for(i = 0; i<blocks.length; i++){
+    	drawInfo = false; 
+    	if( blocks[i].numberAligned == 1 ){
+    		ctx.fillStyle = "lightblue";
+    		ctx.strokeStyle = "lightblue";
+    	}
+    	if( blocks[i].numberAligned == 2 ){
+    		ctx.fillStyle = "steelblue";
+    		ctx.strokeStyle = "steelblue";
+
+    	}
+    	if( blocks[i].numberAligned == 3 ){
+    		ctx.fillStyle = "darkblue";
+    		ctx.strokeStyle = "darkblue";
+    	}
+
+    	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+    		ctx.fillStyle = "coral"; 
+    		drawInfo = true; 
+    	}
+
+    	// if( blocks[i]["id"] == 701 || blocks[i]["id"] == 702 || blocks[i]["id"] == 700 )
+    	// 	ctx.fillStyle = "red"
+    	// if( blocks[i]["id"] == 235 || blocks[i]["id"] == 124 || blocks[i]["id"] == 226 )
+    	// 	ctx.fillStyle = "green"
+    	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+
+
+    	if( drawInfo )
+    	{
+    		ctx.fillStyle = "white";
+    		ctx.fillRect(blocks[i].x-50, 250, blocks[i].w+100, blocks[i].h+50); 
+    		ctx.font="20px Georgia";
+    		ctx.fillStyle = "black";
+    		textToDraw = "block: " + i +" startingPosition: " + blocks[i].startingPosition + " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			ctx.fillText(textToDraw,blocks[i].x, 300);
+			//console.log( textToDraw);
+			drawInfo = false;
+    	}
+
+    	segs = blocks[i].segList; 
+    	//runningY = blocks[i].y + 5; 
+    	for(j= 0; j < segs.length; j++){
+    		s = segs[j].id
+    		// console.log(segments[s])
+    		w = map( segments[s].start + segments[s].size, 0, lengthOfCoordinateSystem, 0, width ) - map( segments[s].start, 0, lengthOfCoordinateSystem, 0, width );
+    		ctx.fillStyle = getColor( segments[s] )
+    		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+    	}
+
+    }
+}
+
+
+
+function getSegmentY(s){
+	if( s.speciesId == species[0].id )
+		return 5;
+	if( s.speciesId == species[1].id )
+		return 15;
+	if( s.speciesId == species[2].id )
+		return 25;
+}
+
+
+function getColor(d){
+	// if( colorScheme == 0 )
+	// {
+	// 	if( d.numberAligned == 1 )
+	// 		return "lightblue";
+	// 	if( d.numberAligned == 2 )
+	// 		return "steelblue";
+	// 	else
+	// 		return "darkblue";
+	// }
+	// if( colorScheme == 1 )
+	// {
+		return d3.interpolateSpectral( map( d.start, 0.0, species[d.speciesId].maxNT, 0.0, 1.0) ) ; 
+	// }
+	// if( colorScheme == 2 )
+	// 	if( d.reverseCompliment )
+	// 		return "orange";
+	// 	else
+	// 		return "steelblue";
+	// if( colorScheme == 3 )
+	// 	return "rgba(0,0,0,.3)";
+	// return "blue";
+}
+
+
+ function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function mouseOver(x1, y1, w, h){
+	if( !mousePosition )
+		return false; 
+	return mousePosition.x > x1 && mousePosition.y > y1 && mousePosition.x < x1+w && mousePosition.y < y1+h; 
+}
+
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+</script>
+
+</body>
+</html>

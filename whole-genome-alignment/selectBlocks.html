@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="4000" height="1000" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+var canvas;
+var ctx;
+
+var worldWidth = 8000; //universal fixed parameters 
+var worldHeight = 1000;  
+var width; //fixed canvas parameters (unless resize)
+var height;
+var lengthOfCoordinateSystem; //fixed dimensions of the universe
+var ntPerPixel; //for this 'zoom' level, how many nt per pixel
+var startNt; //start of view box 
+var stopNt;  //stop of view box
+var midNt; //midpoint of view box 
+var startX; 
+
+var mousePosition;
+var isMouseDown = false; 
+var mouseDownStart = 0; 
+
+var blocks;
+var segments;
+var species;
+var blocksToDraw; 
+
+var highlightBlock = -1; 
+
+var highlightLines = []
+
+var blockHeight = 0; 
+var gapBetweenBlocks = 0;
+
+var updateBlockPositions = false; 
+var relayout = false; 
+var currentLayout = 0; 
+var fixedWidthLayout = 0; 
+var fixedWidth = 10;
+
+var shiftKeyDown = false; 
+var shiftX1 = 0;
+var shiftX2 = 0; 
+
+var colorScheme = 0;
+
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	canvas.width = window.innerWidth;
+	canvas.height = window.innerHeight; 
+	width = canvas.width;
+	height = canvas.height;
+	startX = 0;	
+
+	initInteractivity(); 
+
+	loadJSON("six_ecoli.json", dataCallback);
+	// loadJSON("a_baumannii.json", dataCallback);
+
+}
+
+
+function initInteractivity(){
+	//Interactivity
+	canvas.onmousedown = mouseDown;
+	window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	canvas.onmouseup = mouseUp;
+	canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    window.addEventListener('keyup',keyUp,true);
+
+    // canvas.addEventListener('mousemove', function(evt) {
+    //     mousePosition = getMousePos(canvas, evt);
+    //     //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+    //     //console.log(message);
+    //   }, false);
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+
+ function dataCallback(response) {
+// Parse JSON string into object
+	 all = JSON.parse(response);
+
+	 blocks = all["blocks"];
+	 segments = all["segments"];
+	 species = all["species"];
+	 unplaced = all["unplaced"];
+	 console.log(unplaced);
+	 blockHeight = (species.length-1)*10 + 10;
+ 
+	 lengthOfCoordinateSystem = all["lengthOfCoordinateSystem"];
+	 ntPerPixel = lengthOfCoordinateSystem/worldWidth;
+	 startNt = 0;
+	 stopNt = width * ntPerPixel; //lengthOfCoordinateSystem; 
+	 midNt = (startNt + stopNt)/2.0; 
+
+
+	 idOfConsensusLayout = all["idOfConsensusSpecies"];
+	 currentLayout = idOfConsensusLayout; 
+
+	 initPositions(); 
+	 //layoutBlocks( ); 
+
+
+	 draw(); 
+
+ }
+
+ function initPositions()
+ {
+ 	if( currentLayout >= species.length )
+		return;
+
+ 	//init blocks
+	for(i = 0; i<blocks.length; i++){ 
+		blocks[i].x = 0;
+		blocks[i].y = 0;
+		blocks[i].w = 0;
+		blocks[i].h = 0;
+		blocks[i].targetX = 0;
+		blocks[i].targetY = 0;
+		blocks[i].targetW = 0;
+		blocks[i].targetH = 0;
+		blocks[i].targeting = false; 
+	}
+
+
+	ref = species[currentLayout]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = startX;
+	for(i = 0; i<orderedBlocks.length; i++){ 
+		oIdx = orderedBlocks[i] 
+		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		if( fixedWidthLayout == 0 )
+			w = map( blocks[oIdx].maxLength, 0, stopNt-startNt, 0, width );
+		else
+			w = fixedWidth;
+
+		//blocks[oIdx].targetX = x;
+		// blocks[oIdx].targetW = w;
+		// blocks[oIdx].targetH = blockHeight; //blocks[i].numberAligned*10;	
+		// blocks[oIdx].targetY = 100; 
+
+		blocks[oIdx].x = x;
+		blocks[oIdx].w = w;
+		blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+		blocks[oIdx].y = 100; 
+		runningX+= w;
+	}
+ }
+
+
+ function layoutBlocks(){
+
+	if( currentLayout >= species.length )
+		return;
+
+	updateBlockPositions = true; 
+
+	 //will make blocks not in this list disappear... 
+	 // maybe later will try something else
+	for(i = 0; i<blocks.length; i++){ 
+		blocks[i].targetW = 0; 
+		blocks[i].targetH = 0;
+		blocks[i].targetX = 0;
+		blocks[i].targetY = 100;
+		blocks[i].targeting = true; //update to true
+	}
+
+
+	ref = species[currentLayout]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = startX;
+	for(i = 0; i<orderedBlocks.length; i++){ 
+
+		oIdx = orderedBlocks[i] 
+		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		
+		if( fixedWidthLayout == 0 )
+			w = map( blocks[oIdx].maxLength, 0, stopNt-startNt, 0, width );
+		else
+			w = fixedWidth;
+
+		blocks[oIdx].targetX = x;
+		blocks[oIdx].targetW = w;
+		blocks[oIdx].targetH = blockHeight; //blocks[i].numberAligned*10;	
+		blocks[oIdx].targetY = 100; 
+
+		//blocks[oIdx].x = x;
+		// blocks[oIdx].w = w;
+		// blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+		// blocks[oIdx].y = 100; 
+		runningX+= w;
+	}
+ }
+
+
+// function placeBlocks( index, y ) {
+// 	//map blocks into an appropriate x position
+// 	// console.log(" " + index+ " " + y);
+
+// 	if( index >= species.length )
+// 		return;
+
+
+// 	blocksArray = new Array()
+	
+// 	//init blocks
+// 	for(i = 0; i<blocks.length; i++){ 
+// 		blocksArray.push( {"x": 0, "y": 0, "w": 0, "h": 0 } );
+// 	}
+
+// 	ref = species[index]; //for now
+// 	orderedBlocks = ref["orderedBlocks"];
+// 	runningX = 0;
+// 	for(i = 0; i<orderedBlocks.length; i++){ 
+// 		oIdx = orderedBlocks[i] 
+// 		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+// 		//w = map( blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, width );
+// 		w = 10;
+// 		blocksArray[oIdx].x = x;
+// 		blocksArray[oIdx].w = w;
+// 		blocksArray[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+// 		blocksArray[oIdx].y = y; 
+// 		runningX+= w;
+// 	}
+
+// 	return blocksArray; 
+// }
+
+
+function draw(){
+    window.requestAnimationFrame(draw); 
+
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+
+
+    if( relayout ){
+    	layoutBlocks();
+    	relayout = false;
+    }
+
+    // ctx.globalAlpha = .5; 
+
+    if( updateBlockPositions ){
+    	// console.log("update");
+    	update(); 
+    }
+
+    somethingHighlighted = false; 
+
+    for(i = 0; i< blocks.length; i++){
+		drawInfo = false; 
+
+		ctx.fillStyle = "white";
+	    ctx.strokeStyle = "darkgray"
+	    ctx.lineWidth = 1;
+    	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+    		ctx.fillStyle = "coral"; 
+    		drawInfo = true; 
+
+    		// if( shiftKeyDown && isMouseDown){
+    		// 	blocks[i].isSelected = true;
+    		// }
+    	}
+
+    	//selection
+    	if( shiftKeyDown && isMouseDown ){
+    		if( blocks[i].x >= shiftX1 && blocks[i].x <= shiftX2 ){
+    			blocks[i].isSelected = true;
+    		}
+    		// else if( blocks[i].isSelected ){
+    		// 	blocks[i].isSelected = false;
+    		// }
+    	} 
+
+
+    	if( i == highlightBlock ){
+    		ctx.strokeStyle = "gold";
+			ctx.lineWidth=4;
+    		ctx.fillStyle = "ivory"
+    		ctx.fillRect( blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h );
+
+    		highlightLines.push( {"x": blocks[i].x+blocks[i].w/2.0, "y": blocks[i].y+blocks[i].h/2} );
+		}
+    	if( blocks[i].isSelected )
+    	{
+    		ctx.fillStyle = "lightgray";
+    		ctx.fillRect( blocks[i].x,blocks[i].y-5, blocks[i].w, blocks[i].h+10 );
+    	}
+
+    	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+    	if( drawInfo )
+    	{
+    		ctx.fillStyle = "white";
+    		//ctx.fillRect(b[j].x-50, gapBetweenBlocks+20, b[j].w+100, b[j].h+50); 
+    		ctx.font="20px Georgia";
+    		ctx.fillStyle = "black";
+    		textToDraw = "block: " + i ;//+ " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			ctx.fillText(textToDraw,blocks[i].x, gapBetweenBlocks+20);
+			//console.log( textToDraw);
+			drawInfo = false;
+
+			highlightBlock = i; 
+			somethingHighlighted = true; 
+    	}
+
+    	segs = blocks[i].segList; 
+    	if( blocks[i].w > 0 ){
+    		//runningY = blocks[i].y + 5; 
+	    	for(k= 0; k < segs.length; k++){
+	    		s = segs[k].id
+	    		// console.log(segments[s])
+	    		w =  fixedWidth;//map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	    		if( fixedWidthLayout == 0 )
+					w = map(segments[s].size, 0, stopNt-startNt, 0, width );
+	    		ctx.fillStyle = getColor( segments[s] )
+	    		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	    	}
+	    }
+
+    }
+
+    if( !somethingHighlighted ){
+    	highlightBlock = -1;
+    	highlightLines = [] 
+    }
+  //   else if (highlightLines.length>0){
+  //   	ctx.strokeStyle = "gold";
+		// ctx.lineWidth=4;
+  //   	ctx.beginPath();
+  //   	ctx.moveTo(highlightLines[0].x, highlightLines[0].y);
+
+  //   	for(i = 1; i< highlightLines.length; i++ ){
+		// 	ctx.lineTo(highlightLines[i].x, highlightLines[i].y);
+		// 	ctx.stroke();
+
+		// 	ctx.moveTo(highlightLines[i].x, highlightLines[i].y);
+
+  //   	}
+  //   	ctx.stroke();
+  //   }
+
+
+   //  for(i = 0; i<blocks.length; i++){
+   //  	drawInfo = false; 
+
+   //  	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+   //  		ctx.fillStyle = "coral"; 
+   //  		drawInfo = true; 
+   //  	}
+
+   //  	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+
+   //  	if( drawInfo )
+   //  	{
+   //  		ctx.fillStyle = "white";
+   //  		ctx.fillRect(blocks[i].x-50, 250, blocks[i].w+100, blocks[i].h+50); 
+   //  		ctx.font="20px Georgia";
+   //  		ctx.fillStyle = "black";
+   //  		textToDraw = "block: " + i +" startingPosition: " + blocks[i].startingPosition + " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			// ctx.fillText(textToDraw,blocks[i].x, 300);
+			// //console.log( textToDraw);
+			// drawInfo = false;
+   //  	}
+
+   //  	segs = blocks[i].segList; 
+   //  	if( blocks[i].w > 0 ){
+   //  		//runningY = blocks[i].y + 5; 
+	  //   	for(j= 0; j < segs.length; j++){
+	  //   		s = segs[j].id
+	  //   		// console.log(segments[s])
+	  //   		w =  map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	  //   		ctx.fillStyle = getColor( segments[s] )
+	  //   		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	  //   	}
+	  //   }
+
+   //  }
+
+}
+
+function update(){
+	allUpdated = false; 
+
+	doneCount = 0; 
+	for( i = 0; i < blocks.length; i++ ){
+		doneUpdatingBlock = updateBlock(blocks[i]); 
+		if( doneUpdatingBlock )
+			doneCount++; 
+	}
+
+	if( doneCount == blocks.length ){
+		updateBlockPositions = false; 
+		console.log("done!")
+	}
+	else
+		updateBlockPositions = true; 
+}
+
+function updateBlock(b){
+	count = 0; 
+	 
+	//update x
+	count += updateX(b);
+	count += updateY(b); 
+	count += updateW(b);
+	count += updateH(b); 
+
+	// if( Math.abs( b.x- b.targetX ) < 20.0 ){
+	// 	b.x = b.targetX;
+	// 	count++;
+	// }
+	// else{
+	// 	distance = b.x-b.targetX;  
+	// 	sign = distance && distance / Math.abs(distance);
+	// 	b.x -= sign * distance*.1;
+	// }
+
+	if( count == 4 )
+		return true; 
+	return false; 
+}
+
+function updateX(b){
+
+	if( Math.abs( b.x- b.targetX ) < 20.0 ){
+		b.x = b.targetX;
+		return 1; 
+	}
+	else{
+		distance = b.x-b.targetX;  
+		sign = distance / Math.abs(distance);
+		b.x -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function updateY(b){
+
+	if( Math.abs( b.y- b.targetY ) < 20.0 ){
+		b.y = b.targetY;
+		return 1; 
+	}
+	else{
+		distance = b.y-b.targetY;  
+		sign = distance / Math.abs(distance);
+		b.y -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+
+function updateW(b){
+
+	if( Math.abs( b.w- b.targetW ) < 20.0 ){
+		b.w = b.targetW;
+		return 1; 
+	}
+	else{
+		distance = b.w-b.targetW;  
+		sign = distance && distance / Math.abs(distance);
+		b.w -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function updateH(b){
+
+	if( Math.abs( b.h- b.targetH ) < 20.0 ){
+		b.h = b.targetH;
+		return 1; 
+	}
+	else{
+		distance = b.h-b.targetH;  
+		sign = distance && distance / Math.abs(distance);
+		b.h -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function getColor(d){
+
+	if( colorScheme == 0 )
+	{
+		return d3.interpolateSpectral( map( d.start, 0.0, species[d.speciesId].maxNT, 0.0, 1.0) ) ; 	
+	}
+	if( colorScheme == 1 )
+	{
+		return d3.interpolatePlasma( map( d.start, 0.0, species[d.speciesId].maxNT, 0.0, 1.0) ) ; 	
+	}
+	// if( colorScheme == 0 )
+	// {
+	// 	if( d.numberAligned == 1 )
+	// 		return "lightblue";
+	// 	if( d.numberAligned == 2 )
+	// 		return "steelblue";
+	// 	else
+	// 		return "darkblue";
+	// }
+	// if( colorScheme == 1 )
+	// {
+	// }
+	// if( colorScheme == 2 )
+	// 	if( d.reverseCompliment )
+	// 		return "orange";
+	// 	else
+	// 		return "steelblue";
+	// if( colorScheme == 3 )
+	// 	return "rgba(0,0,0,.3)";
+	// return "blue";
+}
+
+function getSegmentY(s){
+	if( s.speciesId == species[0].id )
+		return 5;
+	if( s.speciesId == species[1].id )
+		return 15;
+	if( s.speciesId == species[2].id )
+		return 25;
+	if( s.speciesId == species[3].id )
+		return 35;
+	if( s.speciesId == species[4].id )
+		return 45;
+	if( s.speciesId == species[5].id )
+		return 55;
+}
+
+
+function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function mouseOver(x1, y1, w, h){
+	if( !mousePosition )
+		return false; 
+	return mousePosition.x > x1 && mousePosition.y > y1 && mousePosition.x < x1+w && mousePosition.y < y1+h; 
+}
+
+
+function mouseDown(event){
+	isMouseDown = true; 
+
+	event = event || window.event; // IE-ism
+    mousePos = {
+        x: event.clientX,
+        y: event.clientY
+    };
+    console.log("mouseDown " + mousePos.x);
+    mouseDownStart = mousePos.x; 
+
+    if( shiftKeyDown )
+    {
+    	shiftX1 = event.clientX; 
+    }
+
+	// if( !anim )
+	// 	draw();
+}
+
+function mouseUp(e){
+	
+	event = event || window.event; // IE-ism
+    mousePos = {
+        x: event.clientX,
+        y: event.clientY
+    }; 
+    console.log("mouseUp " + mousePos.x);
+	isMouseDown = false;
+
+	if( shiftKeyDown )
+    {
+    	shiftX2 = event.clientX; 
+    }
+
+	//shift
+	// startNt = startNt + ntPerPixel * (mousePos.x - mouseDownStart);
+	// stopNt = stopNt + ntPerPixel * (mousePos.x - mouseDownStart);
+	// console.log( startNt + " " + stopNt );
+
+	//here...
+	// startX -= (mousePos.x - mouseDownStart);
+
+	// // if( startX < 0 ) //not using.... 
+	// // 	startX = 0;
+	// //if( startX > )
+
+	mouseDownStart = 0; 
+
+	// // layoutBlocks(); 
+	// initPositions();
+	// // relayout = true;
+	draw();
+
+	// if( !anim )
+	// 	draw();
+}
+
+function mouseMove(event)
+{
+	mousePosition = getMousePos(canvas, event);
+
+	if( isMouseDown ){
+		console.log("move")
+
+		if( shiftKeyDown ){
+			shiftX2 = event.x;
+
+
+			// for(i = 0; i< blocks.length; i++){			
+   //  			if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+   //  				blocks[i].isSelected = true;
+   //  			}
+			// }
+		}
+		else{ 
+			deltaX = (mousePosition.x - mouseDownStart)
+			startX += deltaX;
+
+			shiftX1 += deltaX;
+			shiftX2 += deltaX; 
+			console.log(shiftX1 + " " + shiftX2);
+
+			ntOnScreen = width*ntPerPixel;
+			startNt = ntPerPixel*startX*-1.0;
+			stopNt = startNt + ntOnScreen; 
+			midNt = (startNt + stopNt)/2.0;
+			initPositions(); //hard set, no targeting
+			mouseDownStart = mousePosition.x;
+		}
+	}
+
+}
+
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+
+function keyDown(event){
+	if( event.keyCode == 16 ){// shift key down
+		if( !shiftKeyDown ){			
+			//clear out old selected 
+			for( i = 0; i < blocks.length; i++){
+				blocks[i].isSelected = false; 
+			}
+			shiftX1 = 0;
+			shiftX2 = 0;
+		}
+		shiftKeyDown = true; 
+
+	}
+
+}
+
+
+function keyUp(event){
+	console.log(event.keyCode );
+	if( event.keyCode == 76 ) //l
+	{
+		console.log( "new layout!")
+		currentLayout = currentLayout + 1; 
+		if( currentLayout >= species.length )
+			currentLayout = 0; 
+		relayout = true;
+	}
+	if( event.keyCode == 87 ) //w
+	{
+		console.log( "new layout with width");
+		fixedWidthLayout += 1
+		if( fixedWidthLayout == 2)
+			fixedWidthLayout = 0;
+		relayout = true;
+	}
+	if( event.keyCode == 16 ){// shift key down
+		shiftKeyDown = false; 
+	}
+	if( event.keyCode == 187 ){
+
+		midX = map(midNT, 0, lengthOfCoordinateSystem, startX, stopX); 
+		percentX = midX/(stopX-startX);
+		percentChange = 1.05; 
+		newWidth = (stopX-startX)*percentChange;
+		startX -= newWidth*percentX;
+		stopX += newWidth*(1.0-percentX);
+
+		initPositions();
+		draw();
+
+		// console.log("zoom in");
+
+		// deltaX = 10; 
+		// oldStartX = startX; 
+		// startX -= deltaX; 
+
+		// console.log( "old start x: " + oldStartX + " to new start X " + startX + " delta: " + deltaX);
+
+		// newNtPerPixel = midNt/( deltaX + midNt/ntPerPixel );
+
+		// console.log( "old nt per pixel " + ntPerPixel + " new nt per pixel " + newNtPerPixel );
+
+		// oldStartNt = startNt;
+		// startNt = midNt - newNtPerPixel*deltaX/2.0; 
+		// stopNt = midNt + newNtPerPixel*deltaX/2.0; 
+
+		// console.log( "old mid nt  " + midNt + " new mid nt " + (startNt+stopNt)/2.0 );
+
+		// ntPerPixel = newNtPerPixel;
+
+
+		// // deltaNt = deltaX * ntPerPixel
+		// // startNt = startNt + deltaNt;
+		// // stopNt = stopNt + deltaNt;
+
+		// // console.log( oldStartX + " to " + startX )
+		// // console.log( startNt + " and " + stopNt )
+
+		// initPositions();
+		// draw();
+
+		//-----CURRENT
+		// oldNtPerPixel = ntPerPixel;		
+		// oldNtOnScreen = ntPerPixel*width;
+
+		// ntPerPixel = ntPerPixel*.9;
+		// newNtOnScreen = ntPerPixel*width;
+		// ntDiff = oldNtOnScreen - newNtOnScreen; 
+		// deltaX = ntDiff / ntPerPixel; 
+		// startX = startX - deltaX/2.0; 
+
+		// startNt = midNt - newNtOnScreen/2.0;
+		// stopNt = midNt + newNtOnScreen/2.0;
+
+
+		// if( fixedWidthLayout == 1.0 )
+		// 	fixedWidth = fixedWidth * 1.1; 
+
+
+		// initPositions();
+		// draw();
+	}
+
+	if( event.keyCode == 189 ){
+		//console.log("zoom out");
+		console.log("zoom out");
+		
+		// deltaX = -100; 
+		// oldStartX = startX; 
+		// startX -= deltaX; 
+
+		// console.log( oldStartX + " to " + startX )
+		// initPositions();
+		// draw();
+
+	// change startX
+		oldNtPerPixel = ntPerPixel;		
+		oldNtOnScreen = ntPerPixel*width;
+
+		ntPerPixel = ntPerPixel*1.1;
+		newNtOnScreen = ntPerPixel*width;
+		ntDiff = oldNtOnScreen - newNtOnScreen; 
+
+
+		deltaX = ntDiff / oldNtPerPixel; 
+		startX = startX - deltaX/2.0; 
+
+		// // oldStartNt = startNt;
+		startNt = midNt - newNtOnScreen/2.0;
+		stopNt = midNt + newNtOnScreen/2.0;
+
+
+		initPositions();
+		draw();
+
+		if( fixedWidthLayout == 1.0 )
+			fixedWidth = fixedWidth * .9; 
+
+
+
+	}
+	if( event.keyCode == 67){
+		colorScheme++;
+		if( colorScheme > 1 )
+			colorScheme = 0;
+		draw();
+	}
+	// if( event.keyCode == 17 )
+	// 	controlKeyDown = false; 
+	// if( event.keyCode == 16 )
+	// 	shiftKeyDown = false;
+}
+
+
+</script>
+
+</body>
+</html>

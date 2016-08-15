@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<head>
+	<style>
+
+  .bar{
+    fill: steelblue;
+  }
+
+  .bar:hover{
+    fill: brown;
+  }
+
+	.axis {
+	  font: 10px sans-serif;
+	}
+
+	.axis path,
+	.axis line {
+	  fill: none;
+	  stroke: #000;
+	  shape-rendering: crispEdges;
+	}
+
+/*blue*/
+/*	.q0-9 { fill:rgb(247,251,255); }
+	.q1-9 { fill:rgb(222,235,247); }
+	.q2-9 { fill:rgb(198,219,239); }
+	.q3-9 { fill:rgb(158,202,225); }
+	.q4-9 { fill:rgb(107,174,214); }
+	.q5-9 { fill:rgb(66,146,198); }
+	.q6-9 { fill:rgb(33,113,181); }
+	.q7-9 { fill:rgb(8,81,156); }
+	.q8-9 { fill:rgb(8,48,107); }*/
+
+/*red to yellow to blue*/
+
+	.q0-9 { fill:rgb(215,48,39); }
+	.q1-9 { fill:rgb(244,109,67); }
+	.q2-9 { fill:rgb(253,174,97); }
+	.q3-9 { fill:rgb(254,224,144); }
+	.q4-9 { fill:rgb(255,255,191); }
+	.q5-9 { fill:rgb(224,243,248); }
+	.q6-9 { fill:rgb(171,217,233); }
+	.q7-9 { fill:rgb(116,173,209); }
+	.q8-9 { fill:rgb(69,117,180); }
+
+	</style>
+</head>
+
+<body>
+	
+<script src="http://d3js.org/d3.v3.min.js"></script>
+
+<script>
+	var width = 10000;
+	var height = 600;
+			
+	d3.json("ecoli3.json",  function(error, data) {
+
+		//color scale
+		var quantize = d3.scale.quantize()
+    		.domain([0, 5628445])
+    		.range(d3.range(9).map(function(i) { return "q" + i + "-9"; }));
+
+		//Create SVG element
+		var svg = d3.select("body")
+				.append("svg")
+				.attr("width", width)
+				.attr("height", height);
+
+		var x = d3.scale.linear()
+			.range([0, width])
+    		.domain([0, 5528445+92077]);
+
+
+		svg.selectAll("rect")
+		   .data(data)  
+		   .enter()
+		   .append("rect")
+		   //.attr("x", function(d){return d.alignedSegment*7;})
+		   .attr("x", function(d){return x(d.start);})
+		   .attr("y", function(d){
+			   	if(d.species == "405955" )
+			   		return 10;
+			   	if(d.species == "155864" )
+			   		return 20;
+			   	if(d.species == "511145")
+			   		return 30;
+		   })
+		   .attr("width", function(d){return x(d.size);})
+		   //.attr("width", 5)
+		   .attr("height", 5)
+		   // .attr("class", function(d) { return quantize(d.start); });
+		   // .attr("fill", function(d){
+		   // 		if( d.numberAligned == "1" )
+		   // 			return "lightblue";
+		   // 		if( d.numberAligned == "2" )
+		   // 			return "steelblue";
+		   // 		else
+		   // 			return "darkblue";
+		   // });
+			.attr("fill", "rgba(0,0,0,0.5)" )
+
+});
+
+
+
+</script>
+
+</body>
+
+
+<!-- {
+  "alignedSegments": {
+    "0": {
+      "numberAligned": 3, 
+      "score": 200050, 
+      "segList": [
+        {
+          "contig": "accn|NC_002655", 
+          "reverseCompliment": false, 
+          "size": 199241, 
+          "species": 155864, 
+          "start": 2330143
+        }, 
+        {
+          "contig": "accn|NC_008563", 
+          "reverseCompliment": false, 
+          "size": 190566, 
+          "species": 405955, 
+          "start": 1676785
+        }, 
+        {
+          "contig": "accn|NC_000913", 
+          "reverseCompliment": false, 
+          "size": 198823, 
+          "species": 511145, 
+          "start": 1653079
+        }
+      ]
+    }, 
+    "1": {
+ -->

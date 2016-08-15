@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="4000" height="3000" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+var canvas;
+var ctx;
+
+var worldWidth = 8000; //universal fixed parameters 
+var worldHeight = 1000;  
+var width; //fixed canvas parameters (unless resize)
+var height;
+var lengthOfCoordinateSystem; //fixed dimensions of the universe
+var compressedMaxLength;
+var maxNumberOfContigs;
+var totalNumberOfContigs;
+// var ntPerPixel; 
+var midNt; //midpoint of view box 
+var startX; //where do we start placing the blocks?
+var stopX; //if we use the whole coordinate system, how far will they go? 
+
+var mousePosition;
+var isMouseDown = false; 
+var mouseDownStart = 0; 
+
+var blocks;
+var segments;
+var species;
+var blocksToDraw; 
+
+var highlightBlock = -1; 
+
+var highlightLines = []
+
+var blockHeight = 0; 
+var gapBetweenBlocks = 0;
+
+var updateBlockPositions = false; 
+var relayout = false; 
+var currentLayout = 0; 
+var fixedWidthLayout = 0; 
+var fixedWidth = 10;
+
+var shiftKeyDown = false; 
+var shiftX1 = 0;
+var shiftX2 = 0; 
+
+var colorScheme = 0;
+
+var timelineView = false;
+var whichTimeline = 0; 
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	canvas.width = window.innerWidth;
+	canvas.height = window.innerHeight; 
+	width = canvas.width;
+	height = canvas.height;
+	
+	startX = 0;	
+
+	initInteractivity(); 
+
+	//loadJSON("twenty_five.json", dataCallback);
+
+	loadJSON("compressed.json", dataCallback);
+	// loadJSON("a_baumannii.json", dataCallback);
+
+}
+
+
+function initInteractivity(){
+	//Interactivity
+	canvas.onmousedown = mouseDown;
+	window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	canvas.onmouseup = mouseUp;
+	canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    window.addEventListener('keyup',keyUp,true);
+
+    // canvas.addEventListener('mousemove', function(evt) {
+    //     mousePosition = getMousePos(canvas, evt);
+    //     //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+    //     //console.log(message);
+    //   }, false);
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+
+ function dataCallback(response) {
+// Parse JSON string into object
+	 all = JSON.parse(response);
+
+	 blocks = all["blocks"];
+	 segments = all["segments"];
+	 species = all["species"];
+	 contigs = all["contigs"];
+	 unplaced = all["unplaced"];
+	 console.log(unplaced);
+	 blockHeight = (species.length-1)*10 + 10;
+ 
+	 lengthOfCoordinateSystem = all["lengthOfCoordinateSystem"];
+	 compressedMaxLength = all["compressedMaxLength"];
+
+	 ntPerPixel = lengthOfCoordinateSystem/worldWidth;
+	 startNt = 0;
+	 stopNt = width * ntPerPixel; //lengthOfCoordinateSystem; 
+	 midNt = (startNt + stopNt)/2.0; 
+
+	 //ok max number of contigs per species
+	 // maxNumberOfContigs = 0;
+	 totalNumberOfContigs = contigs.length; //NOTE: not loading this for now...
+	 // //totalNumberOfContigs = 0; 
+	 // for( i = 0; i< species.length; i++){
+	 // 	if( maxNumberOfContigs > species[i].contigList.length )
+	 // 		maxNumberOfContigs = species[i].contigList.length;
+	 // 	//totalNumberOfContigs += species[i].contigList.length;
+	 // }
+
+	 startX = 0; 
+	 stopX = startX + lengthOfCoordinateSystem/ntPerPixel;  
+
+	 fixedNtWidth = 10 * ntPerPixel; 
+
+	 idOfConsensusLayout = all["idOfConsensusSpecies"];
+	 currentLayout = idOfConsensusLayout; 
+
+	 initPositions(); 
+
+	 draw(); 
+
+ }
+
+ function initPositions()
+ {
+ 	if( currentLayout >= species.length )
+		return;
+
+	if( timelineView )
+		layoutTimeLine();
+	else {
+	 	//init blocks
+		for(i = 0; i<blocks.length; i++){ 
+			blocks[i].x = 0;
+			blocks[i].y = 0;
+			blocks[i].w = 0;
+			blocks[i].h = 0;
+			blocks[i].targetX = 0;
+			blocks[i].targetY = 0;
+			blocks[i].targetW = 0;
+			blocks[i].targetH = 0;
+			blocks[i].targeting = false; 
+		}
+
+
+		ref = species[currentLayout]; //for now
+		orderedBlocks = ref["orderedBlocks"];
+		runningX = startX;
+		runningY = 100; 
+		for(i = 0; i<orderedBlocks.length; i++){ 
+			oIdx = orderedBlocks[i] 
+			x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+			if( fixedWidthLayout == 0 )
+				w = map(blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, stopX-startX );  //map( blocks[oIdx].maxLength, 0, stopNt-startNt, 0, width );
+			else
+				w = map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+
+			//blocks[oIdx].targetX = x;
+			// blocks[oIdx].targetW = w;
+			// blocks[oIdx].targetH = blockHeight; //blocks[i].numberAligned*10;	
+			// blocks[oIdx].targetY = 100; 
+
+			blocks[oIdx].x = x;
+			blocks[oIdx].w = w;
+			blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+			blocks[oIdx].y = runningY; 
+
+
+			runningX+= w;
+
+
+
+			segs = blocks[oIdx].segList; 
+	    	if( blocks[oIdx].w > 0 ){
+	  //   		//runningY = blocks[i].y + 5; 
+		    	for(k = 0; k < segs.length; k++){
+		    		s = segs[k].id
+		 //    		// console.log(segments[s])
+		    		w =  map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+		    		if( fixedWidthLayout == 0 )
+						w = map(segments[s].size, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+					segs[k].w = w; 
+					segs[k].y = getSegmentY(segments[s]);
+					segs[k].h = 8;
+					segs[k].x = blocks[oIdx].x;  
+					segs[k].theColor = getColor( segments[s] );
+		    	}
+		    }
+
+
+		}
+		console.log("done");
+	}
+ }
+
+ function layoutTimeLine(){
+ // 	//init blocks
+	for(i = 0; i<blocks.length; i++){ 
+		blocks[i].x = startX;
+		blocks[i].y = 0;
+
+		blocks[i].w = 0;
+		blocks[i].h = 0;
+		blocks[i].targetX = 0;
+		blocks[i].targetY = 0;
+		blocks[i].targetW = 0;
+		blocks[i].targetH = 0;
+		blocks[i].targeting = false; 
+	}
+
+	ref = species[idOfConsensusLayout]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = startX;
+	runningY = 100; 
+	for(i = 0; i<orderedBlocks.length; i++){ 
+		oIdx = orderedBlocks[i] 
+		neighbor = blocks[ oIdx ].compressedNextTo; 
+		neighborX = blocks[ neighbor ].x;
+		neighborW =  map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+		if( fixedWidthLayout == 0 )
+			neighborW = map(blocks[neighbor].maxLength, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+
+		blocks[oIdx].x = neighborX + neighborW;
+
+		if( fixedWidthLayout == 0 )
+			w = map(blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, stopX-startX );  //map( blocks[oIdx].maxLength, 0, stopNt-startNt, 0, width );
+		else
+			w = map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+
+		blocks[oIdx].w = w; 
+
+		blocks[oIdx].y = blocks[oIdx].neighborOrder*(species.length*10)+runningY; 
+		blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+
+		segs = blocks[oIdx].segList; 
+    	if( blocks[oIdx].w > 0 ){
+  //   		//runningY = blocks[i].y + 5; 
+	    	for(k = 0; k < segs.length; k++){
+	    		s = segs[k].id
+	 //    		// console.log(segments[s])
+	    		w =  map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+	    		if( fixedWidthLayout == 0 )
+					w = map(segments[s].size, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+				segs[k].w = w; 
+				segs[k].y = getSegmentY(segments[s]);
+				segs[k].h = 8;
+				segs[k].x = blocks[oIdx].x;  
+				segs[k].theColor = getColor( segments[s] );
+	    	}
+	    }
+
+	}
+
+ }
+
+ function layoutBlocks(){
+
+	if( currentLayout >= species.length )
+		return;
+
+	updateBlockPositions = true; 
+
+	 //will make blocks not in this list disappear... 
+	 // maybe later will try something else
+	for(i = 0; i<blocks.length; i++){ 
+		blocks[i].x = 0;
+		blocks[i].y = 0;
+		blocks[i].w = 0;
+		blocks[i].h = 0;
+		blocks[i].targetW = 0; 
+		blocks[i].targetH = 0;
+		blocks[i].targetX = 0;
+		blocks[i].targetY = 100;
+		blocks[i].targeting = true; //update to true
+	}
+
+
+	ref = species[currentLayout]; //for now
+	orderedBlocks = ref["orderedBlocks"];
+	runningX = startX;
+	for(i = 0; i<orderedBlocks.length; i++){ 
+
+		oIdx = orderedBlocks[i] 
+		x = runningX; //map( blocks[oIdx].startingPosition, 0, lengthOfCoordinateSystem, 0, width);
+		
+		// if( fixedWidthLayout == 0 )
+		// 	w = map(blocks[oIdx].maxLength, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+		// else
+		// 	w = map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+		w =  map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+		if( fixedWidthLayout == 0 )
+			w = map(segments[s].size, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+
+		blocks[oIdx].targetX = x;
+		blocks[oIdx].targetW = w;
+		blocks[oIdx].targetH = blockHeight; //blocks[i].numberAligned*10;	
+		blocks[oIdx].targetY = 100; 
+
+		//blocks[oIdx].x = x;
+		// blocks[oIdx].w = w;
+		// blocks[oIdx].h = blockHeight; //blocks[i].numberAligned*10;	
+		// blocks[oIdx].y = 100; 
+		runningX+= w;
+
+
+		segs = blocks[oIdx].segList; 
+    	if( blocks[oIdx].w > 0 ){
+  //   		//runningY = blocks[i].y + 5; 
+	    	for(k = 0; k < segs.length; k++){
+	    		s = segs[k].id
+	 //    		// console.log(segments[s])
+	    		w =  map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+	    		if( fixedWidthLayout == 0 )
+					w = map(segments[s].size, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+				segs[k].w = w; 
+				segs[k].y = getSegmentY(segments[s]);
+				segs[k].h = 8;
+				segs[k].x = blocks[oIdx].targetX;  
+				segs[k].theColor = getColor( segments[s] );
+	    	}
+	    }
+	}
+ }
+
+
+function draw(){
+    window.requestAnimationFrame(draw); 
+
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+
+
+    if( relayout ){
+    	layoutBlocks();
+    	relayout = false;
+    }
+
+    ctx.globalAlpha = .5; 
+
+    if( updateBlockPositions ){
+    	// console.log("update");
+    	update(); 
+    }
+
+    somethingHighlighted = false; 
+
+    for(i = 0; i< blocks.length; i++){
+		drawInfo = false; 
+
+		ctx.fillStyle = "white";
+	    ctx.strokeStyle = "darkgray"
+	    ctx.lineWidth = 1;
+
+	    //if mouse is over, draw info 
+    	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+    		drawInfo = true; 
+    	}
+
+    	//selection
+    	if( shiftKeyDown && isMouseDown ){
+    		if( blocks[i].x >= shiftX1 && blocks[i].x <= shiftX2 ){
+    			blocks[i].isSelected = true;
+    		}
+    		else if( blocks[i].isSelected ){
+    			blocks[i].isSelected = false;
+    		}
+    	} 
+
+
+    	if( i == highlightBlock ){
+    		ctx.strokeStyle = "gold";
+			ctx.lineWidth=4;
+    		ctx.fillStyle = "ivory"
+    		ctx.fillRect( blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h );
+
+    		// highlightLines.push( {"x": blocks[i].x+blocks[i].w/2.0, "y": blocks[i].y+blocks[i].h/2} );
+		}
+    	if( blocks[i].isSelected )
+    	{
+    		ctx.fillStyle = "lightgray";
+    		ctx.fillRect( blocks[i].x,blocks[i].y-5, blocks[i].w, blocks[i].h+10 );
+    	}
+
+    	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+    	if( drawInfo )
+    	{
+    		ctx.fillStyle = "white";
+    		//ctx.fillRect(b[j].x-50, gapBetweenBlocks+20, b[j].w+100, b[j].h+50); 
+    		ctx.font="20px Georgia";
+    		ctx.fillStyle = "black";
+    		textToDraw = "block: " + i ;//+ " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			ctx.fillText(textToDraw,blocks[i].x, gapBetweenBlocks+20);
+			//console.log( textToDraw);
+			drawInfo = false;
+
+			highlightBlock = i; 
+			somethingHighlighted = true; 
+    	}
+
+    	segSelected = false; 
+    	whichSegSelected = {};
+    	segs = blocks[i].segList; 
+    	if( blocks[i].w > 0 ){
+    		//runningY = blocks[i].y + 5; 
+	    	for(k= 0; k < segs.length; k++){
+	    		s = segs[k].id
+	    		// console.log(segments[s])
+	    // 		w =  map(fixedNtWidth, 0, lengthOfCoordinateSystem, 0, stopX-startX );//fixedWidth;
+	    // 		if( fixedWidthLayout == 0 )
+					// w = map(segments[s].size, 0, lengthOfCoordinateSystem, 0, stopX-startX ); 
+	    // 		ctx.fillStyle = getColor( segments[s] )
+	    // 		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	    		ctx.fillStyle = segs[k].theColor;
+	    		//ctx.fillRect(segs[k].x, segs[k].y+blocks[i].y, segs[k].w , segs[k].h); 
+	    		ctx.fillRect(blocks[i].x, segs[k].y+blocks[i].y, segs[k].w , segs[k].h); 
+
+	    		if( mouseOver(blocks[i].x, segs[k].y+blocks[i].y, segs[k].w , segs[k].h) ){
+    				segSelected = true; 
+    				whichSegSelected = segments[ segs[k].id ];
+    				ctx.fillStyle = "gold";
+    				ctx.fillRect(blocks[i].x, segs[k].y+blocks[i].y, segs[k].w , segs[k].h);
+
+    			}
+
+	    	}
+
+	    	if( segSelected ){
+
+	    		ctx.fillStyle = "white";
+    			//ctx.fillRect(b[j].x-50, gapBetweenBlocks+20, b[j].w+100, b[j].h+50); 
+    			ctx.font="20px Georgia";
+    			ctx.fillStyle = "black";
+    			textToDraw = " species: " + species[ whichSegSelected.speciesId ].name + " contig: " +  contigs[ whichSegSelected.contigId ].name + " start: " + whichSegSelected.start + " size: " + whichSegSelected.size + " reverseCompliment: " + whichSegSelected.reverseCompliment;  
+				ctx.fillText(textToDraw,blocks[i].x+20, gapBetweenBlocks+60);
+				//console.log( textToDraw);
+				segSelected = false;
+
+	    	}
+	    }
+
+
+
+    }
+
+    if( !somethingHighlighted ){
+    	highlightBlock = -1;
+    	highlightLines = [] 
+    }
+  //   else if (highlightLines.length>0){
+  //   	ctx.strokeStyle = "gold";
+		// ctx.lineWidth=4;
+  //   	ctx.beginPath();
+  //   	ctx.moveTo(highlightLines[0].x, highlightLines[0].y);
+
+  //   	for(i = 1; i< highlightLines.length; i++ ){
+		// 	ctx.lineTo(highlightLines[i].x, highlightLines[i].y);
+		// 	ctx.stroke();
+
+		// 	ctx.moveTo(highlightLines[i].x, highlightLines[i].y);
+
+  //   	}
+  //   	ctx.stroke();
+  //   }
+
+
+   //  for(i = 0; i<blocks.length; i++){
+   //  	drawInfo = false; 
+
+   //  	if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+   //  		ctx.fillStyle = "coral"; 
+   //  		drawInfo = true; 
+   //  	}
+
+   //  	ctx.strokeRect(blocks[i].x,blocks[i].y, blocks[i].w, blocks[i].h);
+
+
+   //  	if( drawInfo )
+   //  	{
+   //  		ctx.fillStyle = "white";
+   //  		ctx.fillRect(blocks[i].x-50, 250, blocks[i].w+100, blocks[i].h+50); 
+   //  		ctx.font="20px Georgia";
+   //  		ctx.fillStyle = "black";
+   //  		textToDraw = "block: " + i +" startingPosition: " + blocks[i].startingPosition + " maxLength: " + blocks[i].maxLength ;// + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment ;
+			// ctx.fillText(textToDraw,blocks[i].x, 300);
+			// //console.log( textToDraw);
+			// drawInfo = false;
+   //  	}
+
+   //  	segs = blocks[i].segList; 
+   //  	if( blocks[i].w > 0 ){
+   //  		//runningY = blocks[i].y + 5; 
+	  //   	for(j= 0; j < segs.length; j++){
+	  //   		s = segs[j].id
+	  //   		// console.log(segments[s])
+	  //   		w =  map( segments[s].size, 0, lengthOfCoordinateSystem, 0, width );
+	  //   		ctx.fillStyle = getColor( segments[s] )
+	  //   		ctx.fillRect(blocks[i].x, getSegmentY(segments[s])+blocks[i].y, w , 8); 
+	  //   	}
+	  //   }
+
+   //  }
+
+}
+
+function update(){
+	allUpdated = false; 
+
+	doneCount = 0; 
+	for( i = 0; i < blocks.length; i++ ){
+		doneUpdatingBlock = updateBlock(blocks[i]); 
+		if( doneUpdatingBlock )
+			doneCount++; 
+	}
+
+	if( doneCount == blocks.length ){
+		updateBlockPositions = false; 
+		console.log("done!")
+	}
+	else
+		updateBlockPositions = true; 
+}
+
+function updateBlock(b){
+	count = 0; 
+	 
+	//update x
+	count += updateX(b);
+	count += updateY(b); 
+	count += updateW(b);
+	count += updateH(b); 
+
+	// if( Math.abs( b.x- b.targetX ) < 20.0 ){
+	// 	b.x = b.targetX;
+	// 	count++;
+	// }
+	// else{
+	// 	distance = b.x-b.targetX;  
+	// 	sign = distance && distance / Math.abs(distance);
+	// 	b.x -= sign * distance*.1;
+	// }
+
+	if( count == 4 )
+		return true; 
+	return false; 
+}
+
+function updateX(b){
+
+	if( Math.abs( b.x- b.targetX ) < 20.0 ){
+		b.x = b.targetX;
+		return 1; 
+	}
+	else{
+		distance = b.x-b.targetX;  
+		sign = distance / Math.abs(distance);
+		b.x -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function updateY(b){
+
+	if( Math.abs( b.y- b.targetY ) < 20.0 ){
+		b.y = b.targetY;
+		return 1; 
+	}
+	else{
+		distance = b.y-b.targetY;  
+		sign = distance / Math.abs(distance);
+		b.y -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+
+function updateW(b){
+
+	if( Math.abs( b.w- b.targetW ) < 20.0 ){
+		b.w = b.targetW;
+		return 1; 
+	}
+	else{
+		distance = b.w-b.targetW;  
+		sign = distance && distance / Math.abs(distance);
+		b.w -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function updateH(b){
+
+	if( Math.abs( b.h- b.targetH ) < 20.0 ){
+		b.h = b.targetH;
+		return 1; 
+	}
+	else{
+		distance = b.h-b.targetH;  
+		sign = distance && distance / Math.abs(distance);
+		b.h -= sign * Math.abs(distance)*.05;
+		return 0;
+	}
+}
+
+function getColor(d){
+
+	if( colorScheme == 0 )
+	{
+		return d3.interpolateSpectral( map( d.start, 0.0, species[d.speciesId].maxNT, 0.0, 1.0) ) ; 	
+	}
+	if( colorScheme == 1 )
+	{
+		//console.log( contigs[d.contigId] ); 
+		if( totalNumberOfContigs <= 12 ){
+			contigOrder = contigs[ d.contigId ].order;
+			//console.log( d.contigId + " " + totalNumberOfContigs);
+			//contigOrder = 0;
+
+			colorArray = ['#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#ffff99','#b15928']; 
+
+			return colorArray[d.contigId];//d3.interpolatePlasma( //map( d.contigId, 0.0, totalNumberOfContigs, 0.0, 1.0) ) ; 	
+		}
+		else{			
+			contigOrder = contigs[ d.contigId ].order;
+			//console.log( contigOrder + " " + maxNumberOfContigs);
+			//contigOrder = 0;
+			return d3.interpolatePlasma( map( contigOrder, 0.0, maxNumberOfContigs, 0.0, 1.0) ) ; 	
+		}
+	}
+	// if( colorScheme == 0 )
+	// {
+	// 	if( d.numberAligned == 1 )
+	// 		return "lightblue";
+	// 	if( d.numberAligned == 2 )
+	// 		return "steelblue";
+	// 	else
+	// 		return "darkblue";
+	// }
+	// if( colorScheme == 1 )
+	// {
+	// }
+	// if( colorScheme == 2 )
+	// 	if( d.reverseCompliment )
+	// 		return "orange";
+	// 	else
+	// 		return "steelblue";
+	// if( colorScheme == 3 )
+	// 	return "rgba(0,0,0,.3)";
+	// return "blue";
+}
+
+function getSegmentY(s){
+	return 5 + s.speciesId*10;
+	// console.log(s.speciesId)
+	// if( s.speciesId == species[0].id )
+	// 	return 5;
+	// if( s.speciesId == species[1].id )
+	// 	return 15;
+	// if( s.speciesId == species[2].id )
+	// 	return 25;
+	// if( s.speciesId == species[3].id )
+	// 	return 35;
+	// if( s.speciesId == species[4].id )
+	// 	return 45;
+	// if( s.speciesId == species[5].id )
+	// 	return 55;
+	// runningY = 5;
+	// for(i = 0; i < species.length; i++){
+	// 	if( s.speciesId == species[i].id )
+	// 		return runningY;
+	// 	runningY += 10;
+	// }
+}
+
+
+function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function mouseOver(x1, y1, w, h){
+	if( !mousePosition )
+		return false; 
+	return mousePosition.x > x1 && mousePosition.y > y1 && mousePosition.x < x1+w && mousePosition.y < y1+h; 
+}
+
+
+function mouseDown(event){
+	isMouseDown = true; 
+
+	event = event || window.event; // IE-ism
+    mousePos = {
+        x: event.clientX,
+        y: event.clientY
+    };
+    // console.log("mouseDown " + mousePos.x);
+    mouseDownStart = mousePos.x; 
+
+    if( shiftKeyDown )
+    {
+    	shiftX1 = event.clientX; 
+    }
+
+	// if( !anim )
+	// 	draw();
+}
+
+function mouseUp(e){
+	
+	event = event || window.event; // IE-ism
+    mousePos = {
+        x: event.clientX,
+        y: event.clientY
+    }; 
+    // console.log("mouseUp " + mousePos.x);
+	isMouseDown = false;
+
+	if( shiftKeyDown )
+    {
+    	shiftX2 = event.clientX; 
+    }
+
+	//shift
+	// startNt = startNt + ntPerPixel * (mousePos.x - mouseDownStart);
+	// stopNt = stopNt + ntPerPixel * (mousePos.x - mouseDownStart);
+	// console.log( startNt + " " + stopNt );
+
+	//here...
+	// startX -= (mousePos.x - mouseDownStart);
+
+	// // if( startX < 0 ) //not using.... 
+	// // 	startX = 0;
+	// //if( startX > )
+
+	mouseDownStart = 0; 
+
+	// // layoutBlocks(); 
+	// initPositions();
+	// // relayout = true;
+	draw();
+
+	// if( !anim )
+	// 	draw();
+}
+
+function mouseMove(event)
+{
+	mousePosition = getMousePos(canvas, event);
+
+	if( isMouseDown ){
+		//console.log("move")
+
+		if( shiftKeyDown ){
+			shiftX2 = event.x;
+
+
+			// for(i = 0; i< blocks.length; i++){			
+   //  			if( mouseOver(blocks[i].x, blocks[i].y, blocks[i].w, blocks[i].h) ){
+   //  				blocks[i].isSelected = true;
+   //  			}
+			// }
+		}
+		else{ 
+			deltaX = (mousePosition.x - mouseDownStart)
+			deltaX *= 1.5;
+			startX += deltaX;
+			stopX += deltaX;
+
+			shiftX1 += deltaX;
+			shiftX2 += deltaX; 
+			//console.log(shiftX1 + " " + shiftX2);
+
+			// ntOnScreen = width*ntPerPixel;
+			// startNt = ntPerPixel*startX*-1.0;
+			// stopNt = startNt + ntOnScreen; 
+
+			deltaNt = map( deltaX, 0, (stopX-startX), 0, lengthOfCoordinateSystem); 
+			midNt -= deltaNt; 
+
+			//console.log("midNt " + midNt);
+
+			initPositions(); //hard set, no targeting
+			mouseDownStart = mousePosition.x;
+		}
+	}
+
+}
+
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+
+function keyDown(event){
+	if( event.keyCode == 16 ){// shift key down
+		if( !shiftKeyDown ){			
+			//clear out old selected 
+			for( i = 0; i < blocks.length; i++){
+				blocks[i].isSelected = false; 
+			}
+			shiftX1 = 0;
+			shiftX2 = 0;
+		}
+		shiftKeyDown = true; 
+
+	}
+
+}
+
+
+function keyUp(event){
+	console.log(event.keyCode );
+	if( event.keyCode == 76 ) //l
+	{
+		console.log( "new layout!")
+		currentLayout = currentLayout + 1; 
+		if( currentLayout >= species.length )
+			currentLayout = 0; 
+		//relayout = true;
+
+		initPositions();
+		draw();
+	}
+	if( event.keyCode == 87 ) //w
+	{
+		console.log( "new layout with width");
+		fixedWidthLayout += 1
+		if( fixedWidthLayout == 2)
+			fixedWidthLayout = 0;
+		
+		//relayout = true;
+
+		initPositions();
+		draw();
+	}
+	if( event.keyCode == 16 ){// shift key down
+		shiftKeyDown = false; 
+	}
+	if( event.keyCode == 187 ){ // zoom in
+
+		percentX = midNt/lengthOfCoordinateSystem;
+		console.log("percentX " + percentX)
+		percentChange = .05; 
+		deltaW = (stopX-startX)*percentChange;
+		startX -= deltaW*percentX;
+		stopX += deltaW*(1.0-percentX);
+
+		fixedWidth = fixedWidth*percentChange;
+
+		initPositions();
+		draw();
+	}
+
+	if( event.keyCode == 189 ){ //zoom out 
+
+		percentX = midNt/lengthOfCoordinateSystem;
+		console.log("percentX " + percentX)
+		percentChange = .05; 
+		deltaW = (stopX-startX)*percentChange;
+		startX += deltaW*percentX;
+		stopX -= deltaW*(1.0-percentX);
+
+
+		fixedWidth = fixedWidth*percentChange;
+
+		initPositions();
+		draw();
+
+	}
+	if( event.keyCode == 67){
+		colorScheme++;
+		if( colorScheme > 1 )
+			colorScheme = 0;
+		initPositions(); //changes color scheme
+		draw();
+	}
+	if( event.keyCode == 84){
+		timelineView = !timelineView;
+		console.log("timeline view! " + timelineView);
+
+		initPositions();
+		draw();
+	}
+	// if( event.keyCode == 83){
+	// 	timelineView = !timelineView
+
+	// }
+	// if( event.keyCode == 17 )
+	// 	controlKeyDown = false; 
+	// if( event.keyCode == 16 )
+	// 	shiftKeyDown = false;
+}
+
+
+</script>
+
+</body>
+</html>

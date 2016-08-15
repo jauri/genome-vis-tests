@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script>
+<canvas id="myCanvas" width="32000" height="600" style="border:1px solid #c3c3c3;">
+
+</canvas>
+
+<script>
+
+var canvas;
+var ctx;
+var x = 0; 
+var readyDraw = false; 
+var width;
+var height;
+var data;
+var maxNT = 2000000;//(5528445 + 92077);//5082025 + 174241 + 241387;
+//var maxNT = (5528445 + 92077);//5082025 + 174241 + 241387;
+var positionScheme = 1; 
+var colorScheme = 1;
+
+var mousePosition;
+
+var genomesStart = 80.0; 
+
+init();
+
+function init(){
+
+	canvas = document.getElementById("myCanvas");
+	ctx = canvas.getContext("2d");
+
+	width = canvas.width;
+	height = canvas.height;
+
+	initInteractivity(); 
+
+	loadJSON("ecoli4.json", dataCallback);
+
+}
+
+function initInteractivity(){
+	//Interactivity
+	// canvas.onmousedown = mouseDown;
+	// window.addEventListener('keydown',keyDown,true);
+	// window.addEventListener('keyup',keyUp,true);
+	// canvas.onmouseup = mouseUp;
+	//canvas.onmousemove = mouseMove; 
+
+    // window.addEventListener('DOMMouseScroll', wheelEvent, true);
+    // /** IE/Opera. */
+    // canvas.onmousewheel = wheelEvent;
+
+    canvas.addEventListener('mousemove', function(evt) {
+        mousePosition = getMousePos(canvas, evt);
+        //var message = 'Mouse position: ' + mousePosition.x + ',' + mousePosition.y;
+        //console.log(message);
+      }, false);
+
+	canvas.addEventListener('keydown',keyDown,true);
+
+}
+
+
+function loadJSON(file, callback) {   
+
+    var xobj = new XMLHttpRequest();
+        xobj.overrideMimeType("application/json");
+    xobj.open('GET', file, true); // Replace 'my_data' with the path to your file
+    xobj.onreadystatechange = function () {
+          if (xobj.readyState == 4 && xobj.status == "200") {
+            // Required use of an anonymous callback as .open will NOT return a value but simply returns undefined in asynchronous mode
+            callback(xobj.responseText);
+          }
+    };
+    xobj.send(null);  
+ }
+
+function dataCallback(response) {
+// Parse JSON string into object
+	 data = JSON.parse(response);
+
+	 placeSegments(); 
+	 draw(); 
+
+ }
+
+
+
+function draw() { 
+    window.requestAnimationFrame(draw); 
+    //mousePosition = getMousePos(canvas, event);
+
+    ctx.clearRect(0,0,canvas.width,canvas.height); 
+
+
+	// if(d.species == "405955" )
+ //   		return 30;
+ //   	if(d.species == "155864" )
+ //   		return 20;
+ //   	if(d.species == "511145")
+ //   		return 10;
+ 	ctx.font="10px Georgia";
+ 	ctx.fillStyle = "black";
+    ctx.fillText(fromSpeciesToName("405955"), 0, 35);
+    ctx.fillText(fromSpeciesToName("155864"), 0, 25);
+	ctx.fillText(fromSpeciesToName("511145"), 0, 15);
+
+    drawInfo = false; 
+    for(i = 0; i < data.length; i++){
+    	ctx.fillStyle = data[i].color
+    	if( mouseOver(data[i].xPos, data[i].yPos, data[i].w, data[i].h) ){
+    		ctx.fillStyle = "teal"; 
+    		drawInfo = true; 
+    	}
+    	ctx.fillRect(data[i].xPos, data[i].yPos, data[i].w, data[i].h); 
+
+    	if( drawInfo )
+    	{
+    		ctx.fillStyle = "white";
+    		ctx.stroke = "black";
+    		ctx.fillRect(data[i].xPos-50, 250, data[i].w+100, data[i].h+50); 
+    		ctx.font="20px Georgia";
+    		ctx.fillStyle = "black";
+    		textToDraw = "species: " + fromSpeciesToName(data[i].species) + " start: " + data[i].start + " size: " + data[i].size + " stop: " + (data[i].size+data[i].start) + " revComp " + data[i].reverseCompliment + " block: " + data[i].alignedSegment;
+			ctx.fillText(textToDraw,data[i].xPos, 300);
+			//console.log( textToDraw);
+			drawInfo = false;
+    	}
+    }
+	 
+
+}
+
+function placeSegments(){
+	for(i = 0; i < data.length; i++){
+		data[i].xPos = getX(data[i]);
+		data[i].yPos = getY(data[i]);
+		data[i].w = getW(data[i]);
+		data[i].h =  getH(data[i]);
+		data[i].color = getColor(data[i]);
+
+		// if( data[i].reverseCompliment )
+		// 	data[i].xPos = data[i].xPos - data[i].w;
+
+
+	} 
+}
+
+function getY(d){
+	if(d.species == "405955" )
+   		return 30;
+   	if(d.species == "155864" )
+   		return 20;
+   	if(d.species == "511145")
+   		return 10;
+}
+
+function getX(d){
+	if( positionScheme == 0 )
+		return d.alignedSegment*7;
+	else{
+		// if( ! d.reverseCompliment )
+		// {
+			toReturn = map( d.start, 0.0, maxNT, genomesStart, width-genomesStart*2);
+			if( d.contig == "accn|NC_007414" )
+				toReturn = toReturn + map( 5528445.0, 0.0, maxNT, genomesStart, width-genomesStart*2);
+			if( d.contig == "accn|NC_009838")
+				toReturn = toReturn + map( 5082025.0 , 0.0, maxNT, genomesStart, width-genomesStart*2);
+			if( d.contig == "accn|NC_009837")
+				toReturn = toReturn + map( 5082025.0 , 0.0, maxNT, genomesStart, width-genomesStart*2) + map( 241387.0 , 0.0, maxNT, genomesStart, width-genomesStart*2);
+			return toReturn;
+		// } else {
+		// 	toReturn = map( d.start, 0.0, maxNT, 50.0, width-100);
+
+
+
+		// }
+	}
+
+}
+
+function getW(d){
+	if( positionScheme == 0 )
+		return 5;
+	else
+		return map(d.size+d.start, 0.0, maxNT, genomesStart, width-genomesStart*2) - map(d.start, 0.0, maxNT, genomesStart, width-genomesStart*2);
+}
+
+function getH(d){
+	return 5;
+}
+
+function fromSpeciesToName(s){
+	if( s == "405955")
+		return "EColi_APEC01";
+	if( s == "155864")
+		return "EColi_EDL933";
+	return "EColi_K12";
+}
+
+function getColor(d){
+	if( colorScheme == 0 )
+	{
+		if( d.numberAligned == 1 )
+			return "lightblue";
+		if( d.numberAligned == 2 )
+			return "steelblue";
+		else
+			return "darkblue";
+	}
+	if( colorScheme == 1 )
+	{
+		return d3.interpolateSpectral( map( d.start, 0.0, maxNT, 0.0, 1.0) ) ; 
+	}
+	if( colorScheme == 2 )
+		if( d.reverseCompliment )
+			return "orange";
+		else
+			return "steelblue";
+	if( colorScheme == 3 )
+		return "rgba(0,0,0,.3)";
+	return "blue";
+}
+
+function map(val, x1, x2, y1, y2){
+	return (val - x1)/(x2-x1) * (y2-y1) + y1; 
+}
+
+function mouseOver(x1, y1, w, h){
+	if( !mousePosition )
+		return false; 
+	return mousePosition.x > x1 && mousePosition.y > y1 && mousePosition.x < x1+w && mousePosition.y < y1+h; 
+}
+
+// function mouseMove(event)
+// {
+// 	mousePosition = getMousePos(canvas, event);	
+// }
+
+ function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+}
+
+function keyDown(event){
+	if( event.keyCode == 17 )
+		controlKeyDown = false; 
+	if( event.keyCode == 16 )
+		shiftKeyDown = false;
+}
+
+
+
+</script>
+
+</body>
+</html>
+
+<!--      "contig": "accn|NC_000913",   511145, 4639675
+	
+    "contig": "accn|NC_002655",  155864, len = 5528445
+    "contig": "accn|NC_007414", 155864 len =  92077
+
+    "contig": "accn|NC_008563",  405955 len = 5082025
+    "contig": "accn|NC_009837", 405955 len =   174241
+    "contig": "accn|NC_009838", 405955 len = 241387
+ -->
+
+
